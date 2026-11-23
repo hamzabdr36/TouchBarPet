@@ -1,0 +1,13 @@
+# Build output and local backups (backups contain your own Pock preferences)
+build/
+backups/
+
+# The cat sprite pack is not part of this repo. Download it yourself:
+# https://xzany.itch.io/cat-2d-pixel-art
+*.zip
+*.png
+Sprites/
+!docs/*.png
+!docs/*.gif
+
+.DS_Store
