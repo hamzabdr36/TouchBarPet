@@ -6,7 +6,11 @@ Built for **[Pock](https://pock.app)**, the free, open-source Touch Bar manager 
 
 **Author:** Hamza Badar ([@hamzabdr36](https://github.com/hamzabdr36))
 
-<!-- Add a short recording here, e.g. docs/demo.gif -->
+![The kitten walking, purring, hopping, dashing and napping on the Touch Bar](docs/demo.gif)
+
+On a real Touch Bar, purring after a tap, next to Pock's other widgets:
+
+![Screenshot of the Touch Bar with the kitten purring between Pock's status and Dock widgets](docs/touchbar.png)
 
 ## What it does
 
