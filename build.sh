@@ -35,7 +35,6 @@ BUILD="$ROOT/build"
 BUNDLE="$BUILD/Cat.pock"
 WIDGETS="$HOME/Library/Application Support/Pock/Widgets"
 WIDGET_ID="com.local.pock.Cat"
-TARGET="arm64-apple-macos11"
 
 quit_pock() {
   osascript -e 'tell application id "com.pigigaldi.pock" to quit' >/dev/null 2>&1 || true
@@ -79,7 +78,7 @@ fi
 
 echo "==> Preparing build folder"
 rm -rf "$BUILD"
-mkdir -p "$BUILD/modules" "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources/Sprites"
+mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources/Sprites"
 
 echo "==> Adding sprites"
 if [[ -n "${CAT_SPRITES:-}" ]]; then
@@ -91,29 +90,40 @@ for f in "IDLE" "WALK" "RUN" "ATTACK 1" "HURT" "JUMP" "RUNNING JUMP"; do
   [[ -f "$BUNDLE/Contents/Resources/Sprites/$f.png" ]] || { echo "Missing sprite sheet: $f.png"; exit 1; }
 done
 
-echo "==> Building PockKit interface (widget protocols from PockKit 0.2.0)"
-swiftc -emit-module -parse-as-library -swift-version 5 -target "$TARGET" \
-  -module-name PockKit -suppress-warnings \
-  "$ROOT/vendor/pockkit/PockKit/Sources/Protocols/PKWidget.swift" \
-  "$ROOT/vendor/pockkit/PockKit/Sources/Protocols/PKWidgetPreference.swift" \
-  -emit-module-path "$BUILD/modules/PockKit.swiftmodule"
+# Builds the widget binary for one architecture into build/arch/<arch>/Cat. Returns non-zero on failure.
+build_arch() {
+  local arch="$1" out="$BUILD/arch/$1"
+  mkdir -p "$out/modules"
+  swiftc -emit-module -parse-as-library -swift-version 5 -target "$arch-apple-macos11" \
+    -module-name PockKit -suppress-warnings \
+    "$ROOT/vendor/pockkit/PockKit/Sources/Protocols/PKWidget.swift" \
+    "$ROOT/vendor/pockkit/PockKit/Sources/Protocols/PKWidgetPreference.swift" \
+    -emit-module-path "$out/modules/PockKit.swiftmodule" || return 1
+  swiftc -emit-library -parse-as-library -swift-version 5 -O -target "$arch-apple-macos11" \
+    -module-name Cat \
+    -I "$out/modules" \
+    -F "$POCK_APP/Contents/Frameworks" -framework PockKit \
+    -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+    -Xlinker -install_name -Xlinker @rpath/Cat.pock/Contents/MacOS/Cat \
+    "$ROOT"/Sources/*.swift \
+    -o "$out/Cat" || return 1
+}
 
-echo "==> Compiling widget"
-swiftc -emit-library -parse-as-library -swift-version 5 -O -target "$TARGET" \
-  -module-name Cat \
-  -I "$BUILD/modules" \
-  -F "$POCK_APP/Contents/Frameworks" -framework PockKit \
-  -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-  -Xlinker -install_name -Xlinker @rpath/Cat.pock/Contents/MacOS/Cat \
-  "$ROOT"/Sources/*.swift \
-  -o "$BUNDLE/Contents/MacOS/Cat"
+# Universal build: Apple silicon and Intel Touch Bar MacBooks.
+echo "==> Compiling widget (Apple silicon + Intel)"
+BUILT=()
+for arch in arm64 x86_64; do
+  if build_arch "$arch"; then BUILT+=("$BUILD/arch/$arch/Cat"); else echo "warning: could not build for $arch"; fi
+done
+if [[ ${#BUILT[@]} -eq 0 ]]; then echo "Build failed for every architecture."; exit 1; fi
+lipo -create "${BUILT[@]}" -output "$BUNDLE/Contents/MacOS/Cat"
 
 cp "$ROOT/Resources/Info.plist" "$BUNDLE/Contents/Info.plist"
 
 echo "==> Signing (ad-hoc)"
 codesign --force --sign - "$BUNDLE"
 codesign --verify --verbose=1 "$BUNDLE"
-echo "Built $BUNDLE"
+echo "Built $BUNDLE ($(lipo -archs "$BUNDLE/Contents/MacOS/Cat"))"
 
 if [[ "${1:-}" == "--install" ]]; then
   echo "==> Backing up Pock preferences"
